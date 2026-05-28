@@ -1102,7 +1102,7 @@ const CFG = {
   MAX_LOT_CAP  : 10.0,
   // ── Risk Mode: REPORT = warn but allow, BLOCK = reject overflow trades ──
   RISK_MODE    : 'REPORT',   // 'REPORT' | 'BLOCK'
-  MAX_SL_PTS   : 6.0,        // Hard cap on SL distance
+  MAX_SL_PTS   : 15.0,        // Hard cap on SL distance (raised from 6.0 for XAUUSD)
   // ── Three-Phase Trailing Stop ──
   TRAIL_ENABLED: true,
   TRAIL_PHASE_1: 60,          // % to TP for BE lock — raised from 50% to avoid premature BE on volatility
@@ -1429,7 +1429,7 @@ function detectMarketRegime() {
 
   const body = Math.abs(last.close - last.open);
 
-  if (volatility < 1.0) return 'DEAD';
+  if (volatility < 0.5) return 'DEAD';
   if (body > volatility * 1.5) return 'EXPANSION';
 
   const recent10 = arr.slice(-11, -1); // last 10 completed bars
@@ -1449,12 +1449,12 @@ function detectMarketRegime() {
 // M5 = Narrative / Bias (Sweep)  |  M1 = Precision Execution (all other steps)
 
 const STRAT_CFG = {
-  ENTRY_MIN:                   0.20,   // 20% of OB from bottom
-  ENTRY_MAX:                   0.50,   // 50% of OB from bottom (mean threshold)
-  MIN_DISPLACEMENT_MULTIPLIER: 1.5,    // displacement range ≥ 1.5× ATR
-  MIN_BODY_RATIO:              0.70,   // displacement body ≥ 70% of range
+  ENTRY_MIN:                   0.10,   // 10% of OB from bottom (widened from 20%)
+  ENTRY_MAX:                   0.70,   // 70% of OB from bottom (widened from 50%)
+  MIN_DISPLACEMENT_MULTIPLIER: 1.0,    // displacement range ≥ 1.0× ATR (loosened from 1.5×)
+  MIN_BODY_RATIO:              0.55,   // displacement body ≥ 55% of range (loosened from 70%)
   MIN_STRUCTURE_CANDLES:       12,     // lookback for BMS structure high/low
-  MIN_BMS_CLOSE_STRENGTH:      0.70,   // BMS candle must close ≥ 70% into range
+  MIN_BMS_CLOSE_STRENGTH:      0.55,   // BMS candle must close ≥ 55% into range (loosened from 70%)
   ATR_PERIOD:                  14,
 };
 
@@ -1753,9 +1753,10 @@ const strategy = {
     const zone = (g4 && ob) ? this._entryZone(ob, true) : null;
     const g6   = !!(zone && price >= zone.min && price <= zone.max);
 
-    const signal  = g1 && g2 && g3 && g4 && g5 && g6;
+    // G5 (FVG) is now a quality booster, not a hard gate — signal fires with or without FVG
+    const signal  = g1 && g2 && g3 && g4 && g6;  // G5 no longer required
     const score   = [g1, g2, g3, g4, g5, g6].filter(Boolean).length;
-    const quality = signal ? (this.inKillZone() ? 3 : 2) : 1;
+    const quality = signal ? (this.inKillZone() && g5 ? 3 : (this.inKillZone() || g5) ? 2 : 1) : 1;
 
     // SL reference: sweep candle low (new strategy spec)
     const slRef = sweep ? { low: sweep.candle.low, high: sweep.candle.high } : null;
@@ -1822,9 +1823,10 @@ const strategy = {
     const zone = (g4 && ob) ? this._entryZone(ob, false) : null;
     const g6   = !!(zone && price >= zone.min && price <= zone.max);
 
-    const signal  = g1 && g2 && g3 && g4 && g5 && g6;
+    // G5 (FVG) is a quality booster, not a hard gate — signal fires with or without FVG
+    const signal  = g1 && g2 && g3 && g4 && g6;  // G5 no longer required
     const score   = [g1, g2, g3, g4, g5, g6].filter(Boolean).length;
-    const quality = signal ? (this.inKillZone() ? 3 : 2) : 1;
+    const quality = signal ? (this.inKillZone() && g5 ? 3 : (this.inKillZone() || g5) ? 2 : 1) : 1;
 
     const slRef = sweep ? { low: sweep.candle.low, high: sweep.candle.high } : null;
 
@@ -4014,7 +4016,7 @@ function runStrategy() {
   }
 
   // ── SWEEP EPOCH DEDUPLICATION (20-min cooldown + ±0.3 pt price tolerance) ──
-  const COOLDOWN   = 20 * 60 * 1000;
+  const COOLDOWN   = 5 * 60 * 1000;   // 5-min cooldown (loosened from 20 min)
   const PRICE_TOL  = 0.3;
 
   const isBullDup = bs.sweepEpoch !== undefined && (
@@ -5666,7 +5668,7 @@ setInterval(() => {
 
 addSignal('info','XAUUSD PA Bot v2 — Deriv WebSocket data engine ready',null);
 
-addSignal('info','Strategy: Elite ICT/SMC Delivery Engine — M5 Liquidity Sweep → M1 True BMS → M1 Displacement → M1 OB → M1 FVG → 20-50% Mean Threshold | SL=Sweep Candle | No Gates/Scores',null);
+addSignal('info','Strategy: Elite ICT/SMC Delivery Engine — M5 Liquidity Sweep → M1 True BMS → M1 Displacement → M1 OB → M1 FVG (optional) → 10-70% Mean Threshold | SL=Sweep Candle | Loosened Filters v2',null);
 </script>
 </body>
 </html>
